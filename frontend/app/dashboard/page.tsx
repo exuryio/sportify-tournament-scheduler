@@ -897,7 +897,7 @@ export default function DashboardPage() {
                                 </svg>
                                 <span>Eliminar</span>
                               </button>
-                            </div>
+            </div>
           </div>
 
                           {restriction.notes && (
