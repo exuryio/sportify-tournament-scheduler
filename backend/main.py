@@ -372,6 +372,31 @@ async def create_saturday_schedule(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating schedule: {str(e)}")
 
+@app.post("/scheduler/sunday")
+async def create_sunday_schedule(
+    request_date: date = Query(..., description="Date for Sunday schedule"),
+    db: Session = Depends(get_db)
+):
+    """Create Sunday schedule for all tournaments"""
+    try:
+        scheduler = SportifyScheduler(db)
+        result = scheduler.create_sunday_schedule(request_date)
+        
+        # The scheduler returns a SchedulerResponse object
+        return {
+            "success": True,
+            "message": f"Sunday schedule created successfully! {result.total_matches} matches scheduled across all tournaments.",
+            "total_matches": result.total_matches,
+            "schedule_id": result.schedule_id,
+            "schedule_date": result.week_start_date,
+            "court_utilization_score": result.court_utilization_score,
+            "team_preference_score": result.team_preference_score,
+            "fairness_score": result.fairness_score
+        }
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating Sunday schedule: {str(e)}")
+
 @app.post("/scheduler/optimize")
 async def optimize_schedule(
     schedule_id: uuid.UUID,

@@ -105,8 +105,12 @@ export default function DashboardPage() {
   const [fixtureUpdateTimestamp, setFixtureUpdateTimestamp] = useState<number>(Date.now())
   const [activeTab, setActiveTab] = useState<'fixtures' | 'standings'>('fixtures')
   const [selectedTournamentForFixtures, setSelectedTournamentForFixtures] = useState('')
+  const [sundayMatches, setSundayMatches] = useState<Match[]>([])
+  const [lastSundayDate, setLastSundayDate] = useState<string | null | undefined>(undefined)
+  const [sundayUnscheduledTeams, setSundayUnscheduledTeams] = useState<Team[]>([])
 
   const nextSaturday = '2025-09-06' // Hardcoded for now to match backend
+  const nextSunday = '2025-09-07' // Hardcoded for now to match backend
 
   // Fetch data
   const fetchData = async () => {
@@ -159,6 +163,37 @@ export default function DashboardPage() {
         const data = await restrictionsRes.json()
         setTeamRestrictions(data.restrictions || [])
       }
+
+      // Process Sunday data after all data is fetched
+      const allMatches = matches || []
+      const allTeams = teams || []
+      
+      // Calculate Sunday tournament IDs first
+      const sundayTournamentIds = tournaments
+        .filter(t => ['Maxi 40 Masculino', 'Maxi 50 Masculino', 'Maxi 50 Femenino'].includes(t.name))
+        .map(t => t.id)
+      
+      // Filter Sunday matches (matches scheduled for Sunday AND from Sunday tournaments only)
+      const sundayMatchesFiltered = allMatches.filter(match => {
+        const matchDate = new Date(match.scheduled_date)
+        return matchDate.getDay() === 0 && sundayTournamentIds.includes(match.tournament_id) // Sunday is day 0 AND from Sunday tournaments
+      })
+      setSundayMatches(sundayMatchesFiltered)
+      
+      const sundayTeams = allTeams.filter(team => 
+        sundayTournamentIds.includes(team.tournament_id)
+      )
+      
+      const scheduledTeamIds = new Set()
+      sundayMatchesFiltered.forEach(match => {
+        scheduledTeamIds.add(match.team1_id)
+        scheduledTeamIds.add(match.team2_id)
+      })
+      
+      const unscheduledSundayTeams = sundayTeams.filter(team => 
+        !scheduledTeamIds.has(team.id)
+      )
+      setSundayUnscheduledTeams(unscheduledSundayTeams)
 
     } catch (error) {
       console.error('Error fetching data:', error)
@@ -283,6 +318,37 @@ export default function DashboardPage() {
       }
     } catch (error) {
       alert(`Error creating Saturday schedule: ${error}`)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Create Sunday schedule
+  const createSundaySchedule = async () => {
+    setIsLoading(true)
+    try {
+      const response = await fetch(`http://localhost:8000/scheduler/sunday?request_date=${nextSunday}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        const matchesCount = result.total_matches || result.matches_scheduled || result.matches || 0
+        alert(`Sunday schedule created successfully! ${matchesCount} matches scheduled across all tournaments.`)
+        setLastSundayDate(nextSunday)
+        // Force refresh of all data
+        await fetchData()
+        // Force a re-render by updating a dummy state
+        setFixtureUpdateTimestamp(Date.now())
+      } else {
+        const error = await response.json()
+        alert(`Failed to create Sunday schedule: ${JSON.stringify(error.detail)}`)
+      }
+    } catch (error) {
+      alert(`Error creating Sunday schedule: ${error}`)
     } finally {
       setIsLoading(false)
     }
@@ -503,6 +569,14 @@ export default function DashboardPage() {
               className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
             >
               {isLoading ? 'Creando...' : 'Horario Sábado'}
+            </button>
+            
+            <button
+              onClick={createSundaySchedule}
+              disabled={isLoading}
+              className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2"
+            >
+              {isLoading ? 'Creando...' : 'Horario Domingo'}
             </button>
             
             <button 
@@ -1122,6 +1196,182 @@ export default function DashboardPage() {
                 className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
                 {isLoading ? 'Creando...' : 'Crear Horario del Sábado'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Sunday Schedule Section */}
+        {sundayMatches.length > 0 ? (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">Horario de Torneos del Domingo</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              {sundayMatches.length} partidos programados para el domingo {nextSunday}
+            </p>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Santa Helenita Court Table */}
+              {(() => {
+                const santaHelenitaMatches = sundayMatches.filter(match => {
+                  const court = (courts || []).find(c => c.id === match.court_id);
+                  return court && court.name.toLowerCase().includes('santa helenita');
+                });
+
+                return (
+                  <div className="bg-gray-50 p-4 border">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Cancha Santa Helenita</h3>
+                    
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse border border-gray-300">
+                        <thead>
+                          <tr className="bg-gray-200">
+                            <th className="border border-gray-300 px-2 py-2 text-left text-xs font-semibold text-gray-900">Hora</th>
+                            <th className="border border-gray-300 px-2 py-2 text-left text-xs font-semibold text-gray-900">Partido</th>
+                            <th className="border border-gray-300 px-2 py-2 text-left text-xs font-semibold text-gray-900">Torneo</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {santaHelenitaMatches
+                            .sort((a, b) => {
+                              const timeSlotA = (timeSlots || []).find(ts => ts.id === a.time_slot_id);
+                              const timeSlotB = (timeSlots || []).find(ts => ts.id === b.time_slot_id);
+                              return timeSlotA && timeSlotB ? timeSlotA.start_time.localeCompare(timeSlotB.start_time) : 0;
+                            })
+                            .map((match) => {
+                              const team1 = (teams || []).find(t => t.id === match.team1_id);
+                              const team2 = (teams || []).find(t => t.id === match.team2_id);
+                              const tournament = (tournaments || []).find(t => t.id === team1?.tournament_id);
+                              const timeSlot = (timeSlots || []).find(ts => ts.id === match.time_slot_id);
+                              
+                              return (
+                                <tr key={match.id}>
+                                  <td className="border border-gray-300 px-2 py-2 text-xs text-gray-700">
+                                    {timeSlot ? formatTimeTo12Hour(timeSlot.start_time) : 'N/A'}
+                                  </td>
+                                  <td className="border border-gray-300 px-2 py-2 text-xs text-gray-700">
+                                    {team1?.name || 'Unknown'} vs {team2?.name || 'Unknown'}
+                                  </td>
+                                  <td className="border border-gray-300 px-2 py-2 text-xs text-gray-700">
+                                    {tournament?.name || 'Unknown'}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* La Clarita Court Table */}
+              {(() => {
+                const laClaritaMatches = sundayMatches.filter(match => {
+                  const court = (courts || []).find(c => c.id === match.court_id);
+                  return court && court.name.toLowerCase().includes('la clarita');
+                });
+
+                return (
+                  <div className="bg-gray-50 p-4 border">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Cancha La Clarita</h3>
+                    
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse border border-gray-300">
+                        <thead>
+                          <tr className="bg-gray-200">
+                            <th className="border border-gray-300 px-2 py-2 text-left text-xs font-semibold text-gray-900">Hora</th>
+                            <th className="border border-gray-300 px-2 py-2 text-left text-xs font-semibold text-gray-900">Partido</th>
+                            <th className="border border-gray-300 px-2 py-2 text-left text-xs font-semibold text-gray-900">Torneo</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {laClaritaMatches
+                            .sort((a, b) => {
+                              const timeSlotA = (timeSlots || []).find(ts => ts.id === a.time_slot_id);
+                              const timeSlotB = (timeSlots || []).find(ts => ts.id === b.time_slot_id);
+                              return timeSlotA && timeSlotB ? timeSlotA.start_time.localeCompare(timeSlotB.start_time) : 0;
+                            })
+                            .map((match) => {
+                              const team1 = (teams || []).find(t => t.id === match.team1_id);
+                              const team2 = (teams || []).find(t => t.id === match.team2_id);
+                              const tournament = (tournaments || []).find(t => t.id === team1?.tournament_id);
+                              const timeSlot = (timeSlots || []).find(ts => ts.id === match.time_slot_id);
+                              
+                              return (
+                                <tr key={match.id}>
+                                  <td className="border border-gray-300 px-2 py-2 text-xs text-gray-700">
+                                    {timeSlot ? formatTimeTo12Hour(timeSlot.start_time) : 'N/A'}
+                                  </td>
+                                  <td className="border border-gray-300 px-2 py-2 text-xs text-gray-700">
+                                    {team1?.name || 'Unknown'} vs {team2?.name || 'Unknown'}
+                                  </td>
+                                  <td className="border border-gray-300 px-2 py-2 text-xs text-gray-700">
+                                    {tournament?.name || 'Unknown'}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Sunday Unscheduled Teams by Tournament */}
+            {sundayUnscheduledTeams.length > 0 && (
+              <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mt-6">
+                <h3 className="text-lg font-medium text-yellow-800">Equipos No Programados - Domingo</h3>
+                <p className="text-sm text-yellow-600 mt-1 mb-4">
+                  {sundayUnscheduledTeams.length} equipos no tienen partidos programados para el domingo:
+                </p>
+                
+                {/* Group unscheduled teams by tournament */}
+                {(() => {
+                  const teamsByTournament = sundayUnscheduledTeams.reduce((acc, team) => {
+                    const tournament = tournaments.find(t => t.id === team.tournament_id)
+                    const tournamentName = tournament?.name || 'Sin torneo'
+                    if (!acc[tournamentName]) {
+                      acc[tournamentName] = []
+                    }
+                    acc[tournamentName].push(team)
+                    return acc
+                  }, {} as Record<string, typeof sundayUnscheduledTeams>)
+                  
+                  return Object.entries(teamsByTournament).map(([tournamentName, teams]) => (
+                    <div key={tournamentName} className="mb-4 last:mb-0">
+                      <h4 className="text-sm font-semibold text-yellow-800 mb-2 flex items-center">
+                        <span className="text-lg mr-2">🏆</span>
+                        {tournamentName}
+                        <span className="ml-2 text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">
+                          {teams.length} equipo{teams.length !== 1 ? 's' : ''}
+                        </span>
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {teams.map(team => (
+                          <span key={team.id} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 border border-yellow-200">
+                            {team.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                })()}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">Horario de Torneos del Domingo</h2>
+            <div className="text-center py-8">
+              <p className="text-gray-500 mb-4">No hay horario generado para el domingo.</p>
+              <button
+                onClick={createSundaySchedule}
+                disabled={isLoading}
+                className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+              >
+                {isLoading ? 'Creando...' : 'Crear Horario del Domingo'}
               </button>
             </div>
           </div>

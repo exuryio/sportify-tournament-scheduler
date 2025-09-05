@@ -83,12 +83,22 @@ class TournamentFixtureGenerator:
         
         self.db.commit()
         
+        # Count total fixtures created
+        total_fixtures = 0
+        for round_data in rounds_created:
+            if "fixtures_count" in round_data:
+                total_fixtures += round_data["fixtures_count"]
+        
         return {
+            "success": True,
+            "message": f"Tournament structure generated successfully! {len(rounds_created)} rounds created with {total_fixtures} fixtures.",
+            "fixtures_created": total_fixtures,
+            "rounds_created": len(rounds_created),
+            "groups_created": 2,  # Always creates 2 groups for Round 2
             "tournament_id": tournament_id,
             "team_count": team_count,
             "qualifying_teams": qualifying_teams,
             "group_size": group_size,
-            "rounds_created": len(rounds_created),
             "rounds": rounds_created
         }
     
